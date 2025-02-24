@@ -42,6 +42,7 @@ func NewClient(ctx context.Context, logger logger.Logger, dialOut util.DialOutFu
 		dialOut:            dialOut,
 		padding:            _padding,
 		idleSessionTimeout: idleSessionTimeout,
+		minIdleSession:     minIdleSession,
 		logger:             logger,
 	}
 	if idleSessionCheckInterval <= time.Second*5 {
