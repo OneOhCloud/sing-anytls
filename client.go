@@ -20,6 +20,7 @@ type ClientConfig struct {
 	Password                 string
 	IdleSessionCheckInterval time.Duration
 	IdleSessionTimeout       time.Duration
+	MinIdleSession           int
 	DialOut                  util.DialOutFunc
 	Logger                   logger.ContextLogger
 }
@@ -39,7 +40,7 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 	}
 	// Initialize the padding state of this client
 	padding.UpdatePaddingScheme(padding.DefaultPaddingScheme, &c.padding)
-	c.sessionClient = session.NewClient(ctx, config.Logger, c.createOutboundConnection, &c.padding, config.IdleSessionCheckInterval, config.IdleSessionTimeout)
+	c.sessionClient = session.NewClient(ctx, config.Logger, c.createOutboundConnection, &c.padding, config.IdleSessionCheckInterval, config.IdleSessionTimeout, config.MinIdleSession)
 	return c, nil
 }
 

@@ -30,12 +30,13 @@ type Client struct {
 	padding *atomic.TypedValue[*padding.PaddingFactory]
 
 	idleSessionTimeout time.Duration
+	minIdleSession     int
 
 	logger logger.Logger
 }
 
 func NewClient(ctx context.Context, logger logger.Logger, dialOut util.DialOutFunc,
-	_padding *atomic.TypedValue[*padding.PaddingFactory], idleSessionCheckInterval, idleSessionTimeout time.Duration,
+	_padding *atomic.TypedValue[*padding.PaddingFactory], idleSessionCheckInterval, idleSessionTimeout time.Duration, minIdleSession int,
 ) *Client {
 	c := &Client{
 		dialOut:            dialOut,
@@ -155,17 +156,29 @@ func (c *Client) idleCleanup() {
 }
 
 func (c *Client) idleCleanupExpTime(expTime time.Time) {
+	activeCount := 0
 	var sessionToClose []*Session
 
 	c.idleSessionLock.Lock()
 	it := c.idleSession.Iterate()
 	for it.IsNotEnd() {
 		session := it.Value()
-		if session.idleSince.Before(expTime) {
-			sessionToClose = append(sessionToClose, session)
-			c.idleSession.Remove(it.Key())
-		}
+		key := it.Key()
 		it.MoveToNext()
+
+		if !session.idleSince.Before(expTime) {
+			activeCount++
+			continue
+		}
+
+		if activeCount < c.minIdleSession {
+			session.idleSince = time.Now()
+			activeCount++
+			continue
+		}
+
+		sessionToClose = append(sessionToClose, session)
+		c.idleSession.Remove(key)
 	}
 	c.idleSessionLock.Unlock()
 
