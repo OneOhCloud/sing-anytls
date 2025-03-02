@@ -69,7 +69,7 @@ func (s *Service) NewConnection(ctx context.Context, conn net.Conn, source M.Soc
 	b := buf.NewPacket()
 	defer b.Release()
 
-	_, err := b.ReadOnceFrom(conn)
+	n, err := b.ReadOnceFrom(conn)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (s *Service) NewConnection(ctx context.Context, conn net.Conn, source M.Soc
 
 	by, err := b.ReadBytes(32)
 	if err != nil {
-		b.Reset()
+		b.Resize(0, n)
 		return s.fallback(ctx, conn, source, err, onClose)
 	}
 	var passwordSha256 [32]byte
@@ -85,19 +85,19 @@ func (s *Service) NewConnection(ctx context.Context, conn net.Conn, source M.Soc
 	if user, ok := s.users[passwordSha256]; ok {
 		ctx = auth.ContextWithUser(ctx, user)
 	} else {
-		b.Reset()
+		b.Resize(0, n)
 		return s.fallback(ctx, conn, source, E.New("unknown user password"), onClose)
 	}
 	by, err = b.ReadBytes(2)
 	if err != nil {
-		b.Reset()
+		b.Resize(0, n)
 		return s.fallback(ctx, conn, source, E.Extend(err, "read padding length"), onClose)
 	}
 	paddingLen := binary.BigEndian.Uint16(by)
 	if paddingLen > 0 {
 		_, err = b.ReadBytes(int(paddingLen))
 		if err != nil {
-			b.Reset()
+			b.Resize(0, n)
 			return s.fallback(ctx, conn, source, E.Extend(err, "read padding"), onClose)
 		}
 	}
