@@ -1,3 +1,3 @@
 package util
 
-var Verison = "sing-anytls/0.0.5"
+var Verison = "sing-anytls/0.0.6"
