@@ -109,10 +109,11 @@ func (s *Session) Close() error {
 	if once {
 		if s.dieHook != nil {
 			s.dieHook()
+			s.dieHook = nil
 		}
 		s.streamLock.Lock()
-		for k := range s.streams {
-			s.streams[k].Close()
+		for _, stream := range s.streams {
+			stream.Close()
 		}
 		s.streams = make(map[uint32]*Stream)
 		s.streamLock.Unlock()
@@ -261,7 +262,7 @@ func (s *Session) recvLoop() error {
 					}
 					if s.isClient {
 						if padding.UpdatePaddingScheme(rawScheme, s.padding) {
-							s.logger.Info(fmt.Sprintf("[Update padding succeed] %x\n", md5.Sum(rawScheme)))
+							s.logger.Debug(fmt.Sprintf("[Update padding succeed] %x\n", md5.Sum(rawScheme)))
 						} else {
 							s.logger.Warn(fmt.Sprintf("[Update padding failed] %x\n", md5.Sum(rawScheme)))
 						}
