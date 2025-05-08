@@ -64,6 +64,14 @@ func NewService(config ServiceConfig) (*Service, error) {
 	return service, nil
 }
 
+func (s *Service) UpdateUsers(users []User) {
+	u := make(map[[32]byte]string)
+	for _, user := range users {
+		u[sha256.Sum256([]byte(user.Password))] = user.Name
+	}
+	s.users = u
+}
+
 // NewConnection `conn` should be plaintext
 func (s *Service) NewConnection(ctx context.Context, conn net.Conn, source M.Socksaddr, onClose N.CloseHandlerFunc) error {
 	b := buf.NewPacket()
