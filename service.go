@@ -10,7 +10,7 @@ import (
 
 	"github.com/anytls/sing-anytls/padding"
 	"github.com/anytls/sing-anytls/session"
-	"github.com/sagernet/sing/common/atomic"
+	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
@@ -22,7 +22,7 @@ import (
 
 type Service struct {
 	users           map[[32]byte]string
-	padding         atomic.TypedValue[*padding.PaddingFactory]
+	padding         common.TypedValue[*padding.PaddingFactory]
 	handler         N.TCPConnectionHandlerEx
 	fallbackHandler N.TCPConnectionHandlerEx
 	logger          logger.ContextLogger

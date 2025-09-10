@@ -8,11 +8,12 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anytls/sing-anytls/padding"
 	"github.com/anytls/sing-anytls/util"
-	"github.com/sagernet/sing/common/atomic"
+	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/logger"
 )
@@ -35,7 +36,7 @@ type Session struct {
 	// pool
 	seq       uint64
 	idleSince time.Time
-	padding   *atomic.TypedValue[*padding.PaddingFactory]
+	padding   *common.TypedValue[*padding.PaddingFactory]
 	logger    logger.Logger
 
 	peerVersion byte
@@ -51,7 +52,7 @@ type Session struct {
 	onNewStream func(stream *Stream)
 }
 
-func NewClientSession(conn net.Conn, _padding *atomic.TypedValue[*padding.PaddingFactory], logger logger.Logger) *Session {
+func NewClientSession(conn net.Conn, _padding *common.TypedValue[*padding.PaddingFactory], logger logger.Logger) *Session {
 	s := &Session{
 		conn:        conn,
 		isClient:    true,
@@ -64,7 +65,7 @@ func NewClientSession(conn net.Conn, _padding *atomic.TypedValue[*padding.Paddin
 	return s
 }
 
-func NewServerSession(conn net.Conn, onNewStream func(stream *Stream), _padding *atomic.TypedValue[*padding.PaddingFactory], logger logger.Logger) *Session {
+func NewServerSession(conn net.Conn, onNewStream func(stream *Stream), _padding *common.TypedValue[*padding.PaddingFactory], logger logger.Logger) *Session {
 	s := &Session{
 		conn:        conn,
 		onNewStream: onNewStream,

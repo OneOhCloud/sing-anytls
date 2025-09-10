@@ -10,7 +10,7 @@ import (
 	"github.com/anytls/sing-anytls/padding"
 	"github.com/anytls/sing-anytls/session"
 	"github.com/anytls/sing-anytls/util"
-	"github.com/sagernet/sing/common/atomic"
+	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
@@ -29,7 +29,7 @@ type Client struct {
 	passwordSha256 []byte
 	dialOut        util.DialOutFunc
 	sessionClient  *session.Client
-	padding        atomic.TypedValue[*padding.PaddingFactory]
+	padding        common.TypedValue[*padding.PaddingFactory]
 }
 
 func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {

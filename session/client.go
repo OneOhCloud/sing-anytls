@@ -7,12 +7,13 @@ import (
 	"math"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anytls/sing-anytls/padding"
 	"github.com/anytls/sing-anytls/skiplist"
 	"github.com/anytls/sing-anytls/util"
-	"github.com/sagernet/sing/common/atomic"
+	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/logger"
 )
 
@@ -30,7 +31,7 @@ type Client struct {
 	sessions     map[uint64]*Session
 	sessionsLock sync.Mutex
 
-	padding *atomic.TypedValue[*padding.PaddingFactory]
+	padding *common.TypedValue[*padding.PaddingFactory]
 
 	idleSessionTimeout time.Duration
 	minIdleSession     int
@@ -39,7 +40,7 @@ type Client struct {
 }
 
 func NewClient(ctx context.Context, logger logger.Logger, dialOut util.DialOutFunc,
-	_padding *atomic.TypedValue[*padding.PaddingFactory], idleSessionCheckInterval, idleSessionTimeout time.Duration, minIdleSession int,
+	_padding *common.TypedValue[*padding.PaddingFactory], idleSessionCheckInterval, idleSessionTimeout time.Duration, minIdleSession int,
 ) *Client {
 	c := &Client{
 		sessions:           make(map[uint64]*Session),

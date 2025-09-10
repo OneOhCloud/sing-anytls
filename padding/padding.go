@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/anytls/sing-anytls/util"
-	"github.com/sagernet/sing/common/atomic"
+	"github.com/sagernet/sing/common"
 )
 
 const CheckMark = -1
@@ -31,7 +31,7 @@ type PaddingFactory struct {
 	Md5       string
 }
 
-func UpdatePaddingScheme(rawScheme []byte, to *atomic.TypedValue[*PaddingFactory]) bool {
+func UpdatePaddingScheme(rawScheme []byte, to *common.TypedValue[*PaddingFactory]) bool {
 	if p := NewPaddingFactory(rawScheme); p != nil {
 		to.Store(p)
 		return true
