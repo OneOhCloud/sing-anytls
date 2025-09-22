@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -90,7 +91,7 @@ func (s *Session) Run() {
 	f := newFrame(cmdSettings, 0)
 	f.data = settings.ToBytes()
 	s.buffering = true
-	s.writeFrame(f)
+	s.writeControlFrame(f)
 
 	go s.recvLoop()
 }
@@ -119,7 +120,7 @@ func (s *Session) Close() error {
 		}
 		s.streamLock.Lock()
 		for _, stream := range s.streams {
-			stream.Close()
+			stream.closeLocally()
 		}
 		s.streams = make(map[uint32]*Stream)
 		s.streamLock.Unlock()
@@ -138,8 +139,6 @@ func (s *Session) OpenStream() (*Stream, error) {
 	sid := s.streamId.Add(1)
 	stream := newStream(sid, s)
 
-	//logrus.Debugln("stream open", sid, s.streams)
-
 	if sid >= 2 && s.peerVersion >= 2 {
 		s.synDoneLock.Lock()
 		if s.synDone != nil {
@@ -151,7 +150,7 @@ func (s *Session) OpenStream() (*Stream, error) {
 		s.synDoneLock.Unlock()
 	}
 
-	if _, err := s.writeFrame(newFrame(cmdSYN, sid)); err != nil {
+	if _, err := s.writeControlFrame(newFrame(cmdSYN, sid)); err != nil {
 		return nil, err
 	}
 
@@ -169,6 +168,11 @@ func (s *Session) OpenStream() (*Stream, error) {
 }
 
 func (s *Session) recvLoop() error {
+	// defer func() {
+	// 	if r := recover(); r != nil {
+	// 		logrus.Errorln("[BUG]", r, string(debug.Stack()))
+	// 	}
+	// }()
 	defer s.Close()
 
 	var receivedSettingsFromClient bool
@@ -202,7 +206,7 @@ func (s *Session) recvLoop() error {
 				if !s.isClient && !receivedSettingsFromClient {
 					f := newFrame(cmdAlert, 0)
 					f.data = []byte("client did not send its settings")
-					s.writeFrame(f)
+					s.writeControlFrame(f)
 					return nil
 				}
 				s.streamLock.Lock()
@@ -236,18 +240,18 @@ func (s *Session) recvLoop() error {
 					stream, ok := s.streams[sid]
 					s.streamLock.RUnlock()
 					if ok {
-						stream.CloseWithError(fmt.Errorf("remote: %s", string(buffer)))
+						stream.closeWithError(fmt.Errorf("remote: %s", string(buffer)))
 					}
 					buf.Put(buffer)
 				}
 			case cmdFIN:
-				s.streamLock.RLock()
+				s.streamLock.Lock()
 				stream, ok := s.streams[sid]
-				s.streamLock.RUnlock()
+				delete(s.streams, sid)
+				s.streamLock.Unlock()
 				if ok {
-					stream.Close()
+					stream.closeLocally()
 				}
-				//logrus.Debugln("stream fin", sid, s.streams)
 			case cmdWaste:
 				if hdr.Length() > 0 {
 					buffer := buf.Get(int(hdr.Length()))
@@ -269,10 +273,9 @@ func (s *Session) recvLoop() error {
 						m := util.StringMapFromBytes(buffer)
 						paddingF := s.padding.Load()
 						if m["padding-md5"] != paddingF.Md5 {
-							// logrus.Debugln("remote md5 is", m["padding-md5"])
 							f := newFrame(cmdUpdatePaddingScheme, 0)
 							f.data = paddingF.RawScheme
-							_, err = s.writeFrame(f)
+							_, err = s.writeControlFrame(f)
 							if err != nil {
 								buf.Put(buffer)
 								return err
@@ -286,7 +289,7 @@ func (s *Session) recvLoop() error {
 							f.data = util.StringMap{
 								"v": "2",
 							}.ToBytes()
-							_, err = s.writeFrame(f)
+							_, err = s.writeControlFrame(f)
 							if err != nil {
 								buf.Put(buffer)
 								return err
@@ -324,7 +327,7 @@ func (s *Session) recvLoop() error {
 					}
 				}
 			case cmdHeartRequest:
-				if _, err := s.writeFrame(newFrame(cmdHeartResponse, sid)); err != nil {
+				if _, err := s.writeControlFrame(newFrame(cmdHeartResponse, sid)); err != nil {
 					return err
 				}
 			case cmdHeartResponse:
@@ -359,21 +362,21 @@ func (s *Session) streamClosed(sid uint32) error {
 	if s.IsClosed() {
 		return io.ErrClosedPipe
 	}
-	_, err := s.writeFrame(newFrame(cmdFIN, sid))
+	_, err := s.writeControlFrame(newFrame(cmdFIN, sid))
 	s.streamLock.Lock()
 	delete(s.streams, sid)
 	s.streamLock.Unlock()
 	return err
 }
 
-func (s *Session) writeFrame(frame frame) (int, error) {
-	dataLen := len(frame.data)
+func (s *Session) writeDataFrame(sid uint32, data []byte) (int, error) {
+	dataLen := len(data)
 
 	buffer := buf.NewSize(dataLen + headerOverHeadSize)
-	buffer.WriteByte(frame.cmd)
-	binary.BigEndian.PutUint32(buffer.Extend(4), frame.sid)
+	buffer.WriteByte(cmdPSH)
+	binary.BigEndian.PutUint32(buffer.Extend(4), sid)
 	binary.BigEndian.PutUint16(buffer.Extend(2), uint16(dataLen))
-	buffer.Write(frame.data)
+	buffer.Write(data)
 	_, err := s.writeConn(buffer.Bytes())
 	buffer.Release()
 	if err != nil {
@@ -383,15 +386,38 @@ func (s *Session) writeFrame(frame frame) (int, error) {
 	return dataLen, nil
 }
 
+func (s *Session) writeControlFrame(frame frame) (int, error) {
+	dataLen := len(frame.data)
+
+	buffer := buf.NewSize(dataLen + headerOverHeadSize)
+	buffer.WriteByte(frame.cmd)
+	binary.BigEndian.PutUint32(buffer.Extend(4), frame.sid)
+	binary.BigEndian.PutUint16(buffer.Extend(2), uint16(dataLen))
+	buffer.Write(frame.data)
+
+	s.conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
+	_, err := s.writeConn(buffer.Bytes())
+	buffer.Release()
+	if err != nil {
+		s.Close()
+		return 0, err
+	}
+
+	s.conn.SetWriteDeadline(time.Time{})
+
+	return dataLen, nil
+}
+
 func (s *Session) writeConn(b []byte) (n int, err error) {
 	s.connLock.Lock()
 	defer s.connLock.Unlock()
 
 	if s.buffering {
-		s.buffer = append(s.buffer, b...)
+		s.buffer = slices.Concat(s.buffer, b)
 		return len(b), nil
 	} else if len(s.buffer) > 0 {
-		b = append(s.buffer, b...)
+		b = slices.Concat(s.buffer, b)
 		s.buffer = nil
 	}
 
@@ -424,7 +450,7 @@ func (s *Session) writeConn(b []byte) (n int, err error) {
 						padding[0] = cmdWaste
 						binary.BigEndian.PutUint32(padding[1:5], 0)
 						binary.BigEndian.PutUint16(padding[5:7], uint16(paddingLen))
-						b = append(b, padding...)
+						b = slices.Concat(b, padding)
 					}
 					_, err = s.conn.Write(b)
 					if err != nil {
